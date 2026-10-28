@@ -18,6 +18,7 @@ async function startServer() {
     console.log('You successfully connected to MongoDB!')
     const db = client.db('wanderlust')
     const destinationCollection = db.collection('destination')
+    const bookingCollection = db.collection('bookings')
 
     app.post('/app-destination', async (req, res) => {
       try {
@@ -68,6 +69,8 @@ async function startServer() {
         res.status(500).send({ message: 'error seeding data' })
       }
     })
+
+
     app.get('/destination/:id', async (req, res) => {
       try {
         const { id } = req.params
@@ -122,7 +125,22 @@ async function startServer() {
         res.status(500).send({ message: 'error deleting destination' })
       }
     })
+     app.post('/booking',async(req,res)=>{
 
+const data=req.body
+const result= await bookingCollection.insertOne(data)
+res.send(result)
+     })
+     app.get('/my-bookings', async (req, res) => {
+      try {
+        const { email } = req.query
+        const request = await bookingCollection.find({ email: email }).toArray()
+        res.send(request)
+      } catch (err) {
+        console.error(err)
+        res.status(500).send({ message: 'error fetching bookings' })
+      }
+    })
     app.get('/', (req, res) => {
       res.send({ message: 'server is fine!' })
     })
