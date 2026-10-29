@@ -2,12 +2,32 @@ import express from 'express'
 import { MongoClient, ObjectId } from 'mongodb'
 import 'dotenv/config'
 import cors from 'cors'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 const app = express()
 const PORT = process.env.PORT || 8000
 
 app.use(cors())
 app.use(express.json())
+const verifyApi = async (req, res, next) => {
+  const authHeader = req.headers.authorization
+  if (!authHeader) {
+    return res.status(401).send({ msg: 'Unauthorized!' })
+  }
+  const [scheme, token] = authHeader.split(' ')
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).send({ msg: 'Unauthorized!' })
+  }
+  const JWKS = createRemoteJWKSet(new URL('http://localhost:3000/api/auth/jwks'))
+  try {
+    const { payload } = await jwtVerify(token, JWKS)
+    req.user = payload
+  } catch (error) {
+    console.error('JWT verification failed:', error.message)
+    return res.status(401).send({ msg: 'Unauthorized!' })
+  }
+  next()
+}
 
 const uri = process.env.MONGODB_URI
 const client = new MongoClient(uri)
@@ -42,7 +62,7 @@ async function startServer() {
       }
     })
 
-    app.get('/app-destination', async (req, res) => {
+    app.get('/app-destination', verifyApi, async (req, res) => {
       try {
         const result = await destinationCollection.find().toArray()
         res.send(result)
@@ -69,9 +89,18 @@ async function startServer() {
         res.status(500).send({ message: 'error seeding data' })
       }
     })
+    app.get('/fearured-destination', async (req, res) => {
+      try {
+        const result = await destinationCollection.find().limit(5).toArray()
+        res.send(result)
+      } catch (err) {
+        console.error(err)
+        res.status(500).send({ message: 'error fetching featured destinations' })
+      }
+    })
 
-
-    app.get('/destination/:id', async (req, res) => {
+    app.get('/destination/:id', verifyApi, async (req, res) => {
+     
       try {
         const { id } = req.params
         if (!ObjectId.isValid(id)) {
@@ -109,7 +138,7 @@ async function startServer() {
       }
     })
 
-    app.delete('/destination/:id', async (req, res) => {
+    app.delete('/destination/:id', verifyApi, async (req, res) => {
       try {
         const { id } = req.params
         if (!ObjectId.isValid(id)) {
@@ -125,16 +154,23 @@ async function startServer() {
         res.status(500).send({ message: 'error deleting destination' })
       }
     })
-     app.post('/booking',async(req,res)=>{
-
-const data=req.body
-const result= await bookingCollection.insertOne(data)
-res.send(result)
-     })
-     app.get('/my-bookings', async (req, res) => {
+    app.post('/booking', async (req, res) => {
+      try {
+        const data = req.body
+        const result = await bookingCollection.insertOne(data)
+        res.send(result)
+      } catch (err) {
+        console.error(err)
+        res.status(500).send({ message: 'error creating booking' })
+      }
+    })
+    app.get('/my-bookings', verifyApi, async (req, res) => {
       try {
         const { email } = req.query
-        const request = await bookingCollection.find({ email: email }).toArray()
+        if (!email) {
+          return res.status(400).send({ message: 'email query parameter is required' })
+        }
+        const request = await bookingCollection.find({ email }).toArray()
         res.send(request)
       } catch (err) {
         console.error(err)
